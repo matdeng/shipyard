@@ -1,0 +1,24 @@
+groups:
+  - name: shipyard
+    rules:
+      - alert: ShipyardAppDown
+        expr: up{job="shipyard-app"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "A Shipyard app instance is down"
+      - alert: ShipyardHighErrorRate
+        expr: |
+          sum(rate(shipyard_http_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(shipyard_http_requests_total[5m])), 1e-9) > 0.05
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "More than 5% of Shipyard requests are failing"
+      - alert: ShipyardSlowResponses
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(shipyard_http_request_duration_seconds_bucket[5m]))) > 0.5
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "95th percentile latency is above 500 ms"

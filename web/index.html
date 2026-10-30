@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shipyard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#E9EEEC; --surface:#F7FAF9; --ink:#10202A; --muted:#4E6470; --line:#C8D3D0;
+  --btn:#10202A; --btn-ink:#F7FAF9; --err:#A3341C;
+  --sans:"IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif;
+  --mono:"IBM Plex Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0E1A21; --surface:#16252E; --ink:#E3ECEA; --muted:#9DB1B8; --line:#2A3D47;
+         --btn:#E3ECEA; --btn-ink:#0E1A21; --err:#F08A6C; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 var(--sans)}
+.wrap{max-width:980px;margin:0 auto;padding:32px 20px 64px}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px 24px;border-bottom:2px solid var(--ink);padding-bottom:12px}
+h1{font-size:1.5rem;margin:0;font-weight:600;letter-spacing:-.01em}
+.meta{color:var(--muted);font-size:.92rem}
+.meta code{font-family:var(--mono);color:var(--ink)}
+.served{margin:40px 0 8px;color:var(--muted)}
+.pod{font-family:var(--mono);font-weight:600;font-size:clamp(1.8rem,6vw,3.6rem);line-height:1.05;margin:0;word-break:break-all}
+.visits{margin:12px 0 0;color:var(--muted)}
+.visits strong{color:var(--ink);font-weight:600}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin:24px 0}
+button{font:inherit;font-weight:500;border:2px solid var(--btn);background:var(--btn);color:var(--btn-ink);padding:9px 16px;border-radius:4px;cursor:pointer}
+button.secondary{background:transparent;color:var(--ink)}
+button:disabled{opacity:.5;cursor:wait}
+:focus-visible{outline:3px solid #F0B323;outline-offset:2px}
+h2{font-size:1.15rem;margin:0 0 4px;font-weight:600}
+.hint{color:var(--muted);margin:0 0 14px;font-size:.95rem;max-width:62ch}
+.yard{display:flex;flex-wrap:wrap;gap:4px;min-height:44px;padding:10px;background:var(--surface);border:1px solid var(--line);border-radius:4px}
+.box{width:46px;height:24px;border-radius:2px;position:relative;
+  background-image:repeating-linear-gradient(90deg,rgba(0,0,0,.18) 0 2px,transparent 2px 7px)}
+.box.new{animation:drop .35s ease-out}
+@keyframes drop{from{transform:translateY(-14px);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion: reduce){.box.new{animation:none}}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;margin:12px 0 0;padding:0;list-style:none;font-size:.92rem}
+.legend li{display:flex;align-items:center;gap:8px}
+.legend i{width:14px;height:14px;border-radius:2px;display:inline-block}
+.legend code{font-family:var(--mono)}
+section{margin-top:48px}
+form{display:grid;grid-template-columns:minmax(0,180px) minmax(0,1fr) auto;gap:10px;margin-bottom:18px}
+input{font:inherit;padding:9px 12px;border:1px solid var(--line);border-radius:4px;background:var(--surface);color:var(--ink);min-width:0}
+.err{color:var(--err);min-height:1.5em;margin:-8px 0 10px;font-size:.92rem}
+ol.log{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+ol.log li{padding:12px 0;border-bottom:1px solid var(--line)}
+ol.log .who{font-weight:600}
+ol.log .by{color:var(--muted);font-size:.85rem;margin-left:8px}
+ol.log .by code{font-family:var(--mono)}
+.empty{color:var(--muted)}
+footer{margin-top:56px;color:var(--muted);font-size:.88rem}
+footer a{color:inherit}
+@media (max-width:640px){form{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Shipyard</h1>
+    <div class="meta">Version <code id="version">…</code>, storage <code id="storage">…</code></div>
+  </header>
+
+  <p class="served">This page was answered by</p>
+  <p class="pod" id="pod" aria-live="polite">connecting…</p>
+  <p class="visits"><strong id="visits">0</strong> visits counted across every replica</p>
+
+  <div class="actions">
+    <button id="ask" type="button">Ask again</button>
+    <button id="ask10" type="button" class="secondary">Ask 10 times</button>
+  </div>
+
+  <h2>The yard</h2>
+  <p class="hint">Each block is one answer, coloured by the replica that sent it. With several replicas behind the load balancer, the colours mix. Scale the deployment and watch new colours arrive.</p>
+  <div class="yard" id="yard" aria-label="Recent answers by replica"></div>
+  <ul class="legend" id="legend"></ul>
+
+  <section>
+    <h2>Ship log</h2>
+    <p class="hint">Messages are stored in Redis, so every replica sees the same log, and it survives restarts.</p>
+    <form id="form">
+      <input id="name" placeholder="Your name" maxlength="40" aria-label="Your name" required>
+      <input id="text" placeholder="What did you ship today?" maxlength="280" aria-label="Message" required>
+      <button type="submit">Post to log</button>
+    </form>
+    <p class="err" id="err" role="alert"></p>
+    <ol class="log" id="log"><li class="empty">No messages yet. Post the first one.</li></ol>
+  </section>
+
+  <footer>Built with Git, Docker, GitHub Actions, Terraform, Ansible, Kubernetes, Prometheus and Grafana. Metrics at <a href="/api/info">/api/info</a> and the app's <code>/metrics</code>.</footer>
+</div>
+
+<script>
+const COLORS = ["#F0B323","#2A8C82","#B5462B","#2F5F98","#5E8C31","#6B5B95","#C77D1E","#3E7C9B"];
+const colorOf = {}; const counts = {};
+let next = 0;
+const $ = id => document.getElementById(id);
+
+function short(h){ return h.length > 18 ? "…" + h.slice(-14) : h; }
+
+function addBlock(pod){
+  if(!(pod in colorOf)){ colorOf[pod] = COLORS[next++ % COLORS.length]; }
+  counts[pod] = (counts[pod] || 0) + 1;
+  const b = document.createElement("div");
+  b.className = "box new"; b.style.backgroundColor = colorOf[pod]; b.title = pod;
+  const yard = $("yard"); yard.appendChild(b);
+  while(yard.children.length > 120) yard.removeChild(yard.firstChild);
+  $("legend").innerHTML = Object.keys(counts).map(p =>
+    `<li><i style="background:${colorOf[p]}"></i><code>${short(p)}</code> ${counts[p]}</li>`).join("");
+}
+
+async function ask(){
+  try{
+    const r = await fetch("/api/info", {cache:"no-store"});
+    if(!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    $("pod").textContent = d.served_by;
+    $("visits").textContent = Number(d.visits).toLocaleString();
+    $("version").textContent = d.version;
+    $("storage").textContent = d.storage;
+    addBlock(d.served_by);
+  }catch(e){
+    $("pod").textContent = "API unreachable (" + e.message + ")";
+  }
+}
+
+async function askMany(n){
+  $("ask").disabled = $("ask10").disabled = true;
+  for(let i=0;i<n;i++){ await ask(); }
+  $("ask").disabled = $("ask10").disabled = false;
+}
+
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+async function loadLog(){
+  try{
+    const r = await fetch("/api/messages?limit=20", {cache:"no-store"});
+    const {messages} = await r.json();
+    $("log").innerHTML = messages.length ? messages.map(m =>
+      `<li><span class="who">${esc(m.name)}</span><span class="by">via <code>${esc(short(m.pod))}</code>, version <code>${esc(m.version)}</code></span><div>${esc(m.text)}</div></li>`
+    ).join("") : '<li class="empty">No messages yet. Post the first one.</li>';
+  }catch(e){ /* the info call already shows connectivity problems */ }
+}
+
+$("form").addEventListener("submit", async e => {
+  e.preventDefault(); $("err").textContent = "";
+  const r = await fetch("/api/messages", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({name:$("name").value, text:$("text").value})});
+  if(r.ok){ $("text").value = ""; loadLog(); }
+  else{ const d = await r.json().catch(()=>({})); $("err").textContent = d.error || "Could not post the message (HTTP " + r.status + ")."; }
+});
+$("ask").addEventListener("click", ask);
+$("ask10").addEventListener("click", () => askMany(10));
+
+ask(); loadLog();
+</script>
+</body>
+</html>

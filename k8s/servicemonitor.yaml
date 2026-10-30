@@ -1,0 +1,13 @@
+# Tells the Prometheus Operator (installed by Ansible via kube-prometheus-stack)
+# to scrape /metrics on every pod behind the "app" Service.
+# Requires the monitoring CRDs, so apply it after the monitoring stack exists.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: app
+spec:
+  selector: { matchLabels: { app: app } }
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

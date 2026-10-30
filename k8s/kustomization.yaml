@@ -1,0 +1,22 @@
+# kubectl apply -k k8s/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: shipyard
+resources:
+  - namespace.yaml
+  - redis.yaml
+  - app.yaml
+  - web.yaml
+  - ingress.yaml
+  - hpa.yaml
+  - networkpolicy.yaml
+  # These two need the Prometheus Operator CRDs (installed by the Ansible monitoring role).
+  # Remove them if you run on a cluster without kube-prometheus-stack (e.g. plain kind).
+  - servicemonitor.yaml
+  - prometheusrule.yaml
+images:
+  # Change OWNER to your GitHub username (lowercase). CI pushes :latest and :<commit-sha>.
+  - name: ghcr.io/OWNER/shipyard/app
+    newTag: latest
+  - name: ghcr.io/OWNER/shipyard/web
+    newTag: latest

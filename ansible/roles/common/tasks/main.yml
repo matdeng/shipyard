@@ -1,0 +1,59 @@
+- name: Update apt cache and upgrade packages
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+    upgrade: dist
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name: [curl, git, jq, htop, ufw, fail2ban, unattended-upgrades]
+    state: present
+
+- name: Enable automatic security updates
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    mode: "0644"
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+
+- name: Harden SSH (keys only, no root login)
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/99-shipyard.conf
+    mode: "0644"
+    content: |
+      PasswordAuthentication no
+      PermitRootLogin no
+      KbdInteractiveAuthentication no
+  notify: Restart ssh
+
+- name: Start fail2ban
+  ansible.builtin.service:
+    name: fail2ban
+    state: started
+    enabled: true
+
+- name: Firewall - allow SSH (rate limited)
+  community.general.ufw:
+    rule: limit
+    port: "22"
+    proto: tcp
+
+- name: Firewall - allow web and Kubernetes API
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop: ["80", "443", "6443"]
+
+- name: Firewall - allow k3s pod and service networks
+  community.general.ufw:
+    rule: allow
+    from_ip: "{{ item }}"
+  loop: ["10.42.0.0/16", "10.43.0.0/16"]
+
+- name: Firewall - deny everything else inbound and enable
+  community.general.ufw:
+    state: enabled
+    default: deny
+    direction: incoming

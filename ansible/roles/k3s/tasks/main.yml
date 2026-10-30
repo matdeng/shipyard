@@ -1,0 +1,36 @@
+- name: Check whether k3s is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_bin
+
+- name: Download the k3s installer
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: /tmp/k3s-install.sh
+    mode: "0755"
+  when: not k3s_bin.stat.exists
+
+- name: Install k3s (pinned version)
+  ansible.builtin.command: /tmp/k3s-install.sh
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+    INSTALL_K3S_EXEC: "server --write-kubeconfig-mode 600 --tls-san {{ ansible_host }}"
+  when: not k3s_bin.stat.exists
+  changed_when: true
+
+- name: Wait until the node is Ready
+  ansible.builtin.command: k3s kubectl wait --for=condition=Ready node --all --timeout=180s
+  changed_when: false
+
+- name: Read the cluster kubeconfig
+  ansible.builtin.slurp:
+    src: "{{ kubeconfig }}"
+  register: kcfg
+
+- name: Save a kubeconfig on your laptop that points at the server's public IP
+  ansible.builtin.copy:
+    content: "{{ kcfg.content | b64decode | replace('127.0.0.1', ansible_host) }}"
+    dest: "{{ playbook_dir }}/../kubeconfig"
+    mode: "0600"
+  delegate_to: localhost
+  become: false

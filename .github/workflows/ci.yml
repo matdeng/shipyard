@@ -1,0 +1,132 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # 1. Code quality and unit tests
+  test:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: app } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: app/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check .
+      - name: Unit tests
+        run: pytest -q
+
+  # 2. Check the infrastructure code without touching any cloud
+  infra-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "1.9.8" }
+      - name: Terraform format and validate
+        working-directory: terraform
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false
+          terraform validate
+      - name: Validate Kubernetes manifests
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          kubectl kustomize k8s | ./kubeconform -strict -ignore-missing-schemas -summary
+      - name: Ansible syntax check
+        working-directory: ansible
+        run: |
+          pip install ansible-core==2.17.5
+          ansible-galaxy collection install -r requirements.yml
+          cp inventory.ini.example inventory.ini
+          ansible-playbook site.yml --syntax-check
+
+  # 3. Look for leaked secrets in the whole history
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 4. Build both images, scan them, push to GitHub Container Registry
+  build:
+    needs: [test, infra-lint, secrets-scan]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        component: [app, web]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out the image name (must be lowercase)
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}/${{ matrix.component }}" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image (not pushed yet)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.component }}
+          load: true
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          build-args: APP_VERSION=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+
+      - name: Scan image for vulnerabilities (fail on critical)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ github.sha }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push image (main branch only)
+        if: github.event_name == 'push'
+        run: |
+          docker tag "$IMAGE:${{ github.sha }}" "$IMAGE:latest"
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
+
+  # 5. Deploy (optional). Runs on a self-hosted runner installed on your k3s server,
+  #    so the Kubernetes API never has to be opened to the internet.
+  #    Turn on with: repo Settings > Secrets and variables > Actions > Variables > DEPLOY_ENABLED = true
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: [self-hosted, shipyard]
+    environment: production
+    steps:
+      - name: Roll out the new images
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          sudo k3s kubectl -n shipyard set image deploy/app app="$IMAGE/app:${{ github.sha }}"
+          sudo k3s kubectl -n shipyard set image deploy/web web="$IMAGE/web:${{ github.sha }}"
+          sudo k3s kubectl -n shipyard rollout status deploy/app --timeout=180s
+          sudo k3s kubectl -n shipyard rollout status deploy/web --timeout=180s
+      - name: Smoke test
+        run: curl -fsS http://localhost/api/info

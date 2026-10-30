@@ -1,0 +1,19 @@
+# secrets and generated files
+.env
+*.pem
+kubeconfig
+ansible/inventory.ini
+
+# terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+crash.log
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/

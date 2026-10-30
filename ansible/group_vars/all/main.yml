@@ -1,0 +1,20 @@
+# ---- change this ----
+github_owner: CHANGE_ME               # your GitHub username, lowercase
+
+# ---- what to deploy ----
+image_repo: "ghcr.io/{{ github_owner }}/shipyard"
+image_tag: latest                     # CI also pushes :<commit-sha>; pass -e image_tag=abc123
+
+# ---- pinned versions (upgrade on purpose, never by accident) ----
+k3s_version: v1.30.6+k3s1
+helm_version: v3.16.2
+kps_chart_version: "65.1.1"           # kube-prometheus-stack
+
+# ---- secrets ----
+# Better: put vault_grafana_admin_password in group_vars/all/vault.yml and encrypt it:
+#   ansible-vault encrypt group_vars/all/vault.yml
+grafana_admin_password: "{{ vault_grafana_admin_password | default('change-me-now') }}"
+
+# ---- paths ----
+kubeconfig: /etc/rancher/k3s/k3s.yaml
+app_dir: /opt/shipyard

@@ -1,0 +1,55 @@
+# Phase 1: run the whole system on your laptop.
+#   docker compose up -d --build
+#   App:        http://localhost:8080
+#   Prometheus: http://localhost:9090
+#   Grafana:    http://localhost:3000  (admin / admin)
+#   Scale it:   docker compose up -d --scale app=3   then restart web: docker compose restart web
+services:
+  web:
+    build: ./web
+    ports: ["8080:8080"]
+    depends_on: [app]
+    restart: unless-stopped
+
+  app:
+    build:
+      context: ./app
+      args: { APP_VERSION: local }
+    environment:
+      REDIS_HOST: redis
+    depends_on:
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.2-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports: ["9090:9090"]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["3000:3000"]
+    depends_on: [prometheus]
+    restart: unless-stopped
+
+volumes:
+  redis-data:

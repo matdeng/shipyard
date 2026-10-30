@@ -1,0 +1,65 @@
+- name: Check whether helm is installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/helm
+  register: helm_bin
+
+- name: Download helm
+  ansible.builtin.unarchive:
+    src: "https://get.helm.sh/helm-{{ helm_version }}-linux-amd64.tar.gz"
+    dest: /tmp
+    remote_src: true
+  when: not helm_bin.stat.exists
+
+- name: Install helm binary
+  ansible.builtin.copy:
+    src: /tmp/linux-amd64/helm
+    dest: /usr/local/bin/helm
+    mode: "0755"
+    remote_src: true
+  when: not helm_bin.stat.exists
+
+- name: Create working directory
+  ansible.builtin.file:
+    path: "{{ app_dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Write Helm values for the monitoring stack
+  ansible.builtin.template:
+    src: monitoring-values.yaml.j2
+    dest: "{{ app_dir }}/monitoring-values.yaml"
+    mode: "0600"   # contains the Grafana password
+
+- name: Add the prometheus-community chart repo
+  ansible.builtin.command: helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
+  environment: { KUBECONFIG: "{{ kubeconfig }}" }
+  changed_when: false
+
+- name: Install or upgrade kube-prometheus-stack (Prometheus, Grafana, exporters)
+  ansible.builtin.command: >
+    helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack
+    --version {{ kps_chart_version }}
+    --namespace monitoring --create-namespace
+    -f {{ app_dir }}/monitoring-values.yaml
+    --wait --timeout 10m
+  environment: { KUBECONFIG: "{{ kubeconfig }}" }
+  register: helm_result
+  changed_when: "'has been upgraded' in helm_result.stdout or 'STATUS: deployed' in helm_result.stdout"
+
+- name: Copy the Shipyard Grafana dashboard
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../monitoring/grafana/dashboards/shipyard.json"
+    dest: "{{ app_dir }}/shipyard-dashboard.json"
+    mode: "0644"
+
+- name: Load the dashboard into Grafana (sidecar picks up labelled ConfigMaps)
+  ansible.builtin.shell: |
+    set -o pipefail
+    k3s kubectl -n monitoring create configmap shipyard-dashboard \
+      --from-file=shipyard.json={{ app_dir }}/shipyard-dashboard.json \
+      --dry-run=client -o yaml \
+    | k3s kubectl label --local -f - grafana_dashboard=1 -o yaml \
+    | k3s kubectl apply -f -
+  args: { executable: /bin/bash }
+  register: dash
+  changed_when: "'unchanged' not in dash.stdout"

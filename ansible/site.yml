@@ -1,0 +1,20 @@
+# ansible-playbook site.yml
+# Runs top to bottom: harden the server, install Kubernetes, add monitoring, deploy the app.
+# Every role is idempotent: run it again and nothing changes unless something drifted.
+- name: Shipyard server
+  hosts: k3s
+  become: true
+  pre_tasks:
+    - name: Make sure github_owner is set
+      ansible.builtin.assert:
+        that: github_owner != "CHANGE_ME"
+        fail_msg: "Set github_owner in group_vars/all/main.yml first."
+  roles:
+    - role: common       # updates, firewall, fail2ban, SSH hardening
+      tags: [common]
+    - role: k3s          # lightweight Kubernetes
+      tags: [k3s]
+    - role: monitoring   # Prometheus + Grafana via Helm
+      tags: [monitoring]
+    - role: deploy       # the Shipyard app via kustomize
+      tags: [deploy]

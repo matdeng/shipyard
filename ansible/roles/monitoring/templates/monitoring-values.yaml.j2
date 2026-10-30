@@ -1,0 +1,31 @@
+# Values for kube-prometheus-stack on a single small k3s node.
+alertmanager:
+  enabled: false            # turn on and configure receivers to get Slack/email alerts
+
+grafana:
+  adminPassword: "{{ grafana_admin_password }}"
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    hosts: ["grafana.{{ ansible_host }}.nip.io"]   # nip.io = free wildcard DNS for any IP
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      searchNamespace: ALL
+
+prometheus:
+  prometheusSpec:
+    # pick up ServiceMonitors and rules from every namespace, not only Helm-labelled ones
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    retention: 7d
+    resources:
+      requests: { cpu: 100m, memory: 400Mi }
+
+# k3s runs these components inside one binary, so the default scrape targets don't exist
+kubeControllerManager: { enabled: false }
+kubeScheduler: { enabled: false }
+kubeProxy: { enabled: false }
+kubeEtcd: { enabled: false }
