@@ -32,7 +32,10 @@ configure:       ## Harden server, install k3s, monitoring and app with Ansible
 deploy:          ## Deploy a specific image tag (make deploy TAG=abc123)
 	cd ansible && ansible-playbook site.yml $(VAULT) --tags deploy -e image_tag=$(TAG)
 
+test-infra:      ## Apply Terraform against LocalStack (no AWS account needed)
+	scripts/tf-localstack.sh
+
 destroy:         ## Delete ALL cloud resources (stops the bill)
 	cd terraform && terraform destroy
 
-.PHONY: help test up down scale smoke infra configure deploy destroy
+.PHONY: help test test-infra up down scale smoke infra configure deploy destroy

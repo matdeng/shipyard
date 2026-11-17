@@ -51,6 +51,19 @@ jobs:
           cp inventory.ini.example inventory.ini
           ansible-playbook site.yml --syntax-check
 
+  # 2b. Apply the Terraform code against an AWS emulator (no real cloud)
+  infra-localstack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "1.9.8" }
+      - name: Terraform apply against LocalStack
+        run: scripts/tf-localstack.sh
+      - name: Stop LocalStack
+        if: always()
+        run: docker compose -f docker-compose.localstack.yml down -v
+
   # 3. Look for leaked secrets in the whole history
   secrets-scan:
     runs-on: ubuntu-latest

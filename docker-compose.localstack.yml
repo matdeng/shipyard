@@ -1,0 +1,14 @@
+# AWS emulator for testing the Terraform code without touching a real account.
+#   docker compose -f docker-compose.localstack.yml up -d
+# Uses host port 4567 so it doesn't clash with other LocalStack instances on 4566.
+name: shipyard-localstack
+services:
+  localstack:
+    image: localstack/localstack:4
+    ports: ["4567:4566"]
+    environment:
+      SERVICES: ec2,sts,iam
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      retries: 20
